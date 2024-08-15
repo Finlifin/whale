@@ -1,21 +1,21 @@
 const std = @import("std");
-const Lexer = @import("lex.zig").Lexer;
+const Parse = @import("parse/Parse.zig");
+const Lex = @import("lex/lex.zig");
+const Gpa = std.heap.GeneralPurposeAllocator(.{});
 
 pub fn main() !void {
+    var gpa = Gpa{};
+    // defer if (gpa.deinit() == .leak) {};
+
     const src_file = std.fs.cwd().openFile("test.whale", .{ .mode = .read_only }) catch unreachable;
-    const src = src_file.readToEndAlloc(std.heap.page_allocator, 1024 * 1024) catch unreachable;
-    var lexer = Lexer.init(src);
-    defer lexer.deinit();
+    defer src_file.close();
+    const src = src_file.readToEndAlloc(gpa.allocator(), 1024 * 1024) catch unreachable;
+    defer gpa.allocator().free(src);
 
-    std.debug.print("================src=================\n{s}\n", .{src});
+    const tokens = Lex.lex(gpa.allocator(), src);
 
-    while (true) {
-        const token = lexer.next();
-        std.debug.print("'{s}' => {s}\n", .{
-            @tagName(token.tag),
-            src[token.from..token.to],
-        });
+    var p = Parse.init(gpa.allocator(), gpa.allocator(), src, &tokens);
+    const expr = p.pExpr();
 
-        if (token.tag == .eof) break;
-    }
+    p.dump(expr, 0);
 }

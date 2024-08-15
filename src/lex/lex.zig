@@ -125,6 +125,9 @@ pub const Lexer = struct {
                         if (self.eatChar('=')) {
                             self.cursor += 1;
                             return token(.@"+=", old_cursor, self.cursor);
+                        } else if (self.eatChar('+')) {
+                            self.cursor += 1;
+                            return token(.@"++", old_cursor, self.cursor);
                         } else {
                             self.cursor += 1;
                             return token(.@"+", old_cursor, self.cursor);
@@ -237,9 +240,14 @@ pub const Lexer = struct {
     fn recognizeId(self: *Self) Token {
         const b = self.src;
         const old_cursor = self.cursor;
-
         while (true) : (self.cursor += 1) {
-            if (self.cursor >= self.src.len) return token(.eof, 0, 0);
+            if (self.cursor + 1 >= self.src.len)
+                if (Token.keywords.get(b[old_cursor..self.cursor])) |kw|
+                    return token(kw, old_cursor, self.cursor)
+                else {
+                    std.debug.print("did recognizeId\n", .{});
+                    return token(.id, old_cursor, self.cursor);
+                };
             const c = b[self.cursor];
 
             switch (c) {
@@ -248,6 +256,7 @@ pub const Lexer = struct {
                     if (Token.keywords.get(b[old_cursor..self.cursor])) |kw|
                         return token(kw, old_cursor, self.cursor)
                     else {
+                        std.debug.print("did recognizeId\n", .{});
                         return token(.id, old_cursor, self.cursor);
                     }
                 },
@@ -260,7 +269,7 @@ pub const Lexer = struct {
         var met_dot: bool = false;
 
         while (true) : (self.cursor += 1) {
-            if (self.cursor >= self.src.len) return token(.eof, 0, 0);
+            if (self.cursor >= self.src.len) return token(if (met_dot) .real else .int, old_cursor, self.cursor);
             const c = b[self.cursor];
 
             switch (c) {
@@ -330,10 +339,11 @@ pub const Token = struct {
     from: Index,
     to: Index,
 
-    const Tag = enum(Index) {
+    pub const Tag = enum(Index) {
         // operators
         @"+",
         @"+=",
+        @"++",
         @" + ",
         @"<",
         @"<=",
@@ -393,7 +403,7 @@ pub const Token = struct {
         k_comptime,
         k_const,
         k_define,
-        k_derive,
+        k_undefined,
         k_do,
         k_effect,
         k_else,
@@ -430,11 +440,26 @@ pub const Token = struct {
         k_void,
         k_while,
         k_pure,
+        k_derive,
+        k_requires,
+        k_ensures,
+        k_unit,
+        k_newtype,
+        k_typealias,
+        k_unsafe,
+        k_any,
+        k_lifting,
+        k_in,
+        k_not,
+        k_case,
+        k_move,
+        k_any,
 
         // others
         id,
         comment,
         invalid,
+        sof,
         eof,
     };
 
@@ -485,6 +510,20 @@ pub const Token = struct {
         .{ "unreachable", .k_unreachable },
         .{ "void", .k_void },
         .{ "while", .k_while },
+        .{ "undefined", .k_undefined },
+        .{ "requires", .k_requires },
+        .{ "ensures", .k_ensures },
+        .{ "unit", .k_unit },
+        .{ "newtype", .k_newtype },
+        .{ "unsafe", .k_unsafe },
+        .{ "typealias", .k_typealias },
+        .{ "any", .k_any },
+        .{ "lifting", .k_lifting },
+        .{ "in", .k_in },
+        .{ "not", .k_not },
+        .{ "case", .k_case },
+        .{ "move", .k_move },
+        .{ "any", .k_any },
     });
 };
 
@@ -492,5 +531,17 @@ inline fn token(tag: Token.Tag, from: Index, to: Index) Token {
     return .{ .tag = tag, .from = from, .to = to };
 }
 
-const Index = @import("base/types.zig").Index;
+const Index = @import("../base/types.zig").Index;
 const std = @import("std");
+
+pub fn lex(gpa: std.mem.Allocator, src: []const u8) std.MultiArrayList(Token) {
+    var lexer = Lexer.init(src);
+    var result = std.MultiArrayList(Token){};
+    result.append(gpa, token(.sof, 0, 0)) catch unreachable;
+    while (true) {
+        const t = lexer.next();
+        result.append(gpa, t) catch unreachable;
+        if (t.tag == .eof) break;
+    }
+    return result;
+}
